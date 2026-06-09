@@ -679,6 +679,66 @@
       }
     }
 
+    // ==========================================
+      // ENHANCED API FUNCTIONS (Option B - Full AI)
+      // ==========================================
+
+      // Fetch Lichess puzzle activity with themes
+      async function fetchLichessPuzzleActivity(username) {
+        try {
+          const response = await fetch(`https://lichess.org/api/puzzle/activity?max=50`);
+          if (!response.ok) return null;
+          const data = await response.json();
+          return data;
+        } catch (error) {
+          console.error('Lichess puzzle activity error:', error);
+          return null;
+        }
+      }
+
+      // Fetch Lichess game statistics
+      async function fetchLichessGameStats(username) {
+        try {
+          const response = await fetch(`https://lichess.org/api/user/${username}`);
+          if (!response.ok) return null;
+          const data = await response.json();
+          return {
+            perfs: data.perfs,
+            playTime: data.playTime,
+            count: data.count
+          };
+        } catch (error) {
+          console.error('Lichess game stats error:', error);
+          return null;
+        }
+      }
+
+      // Fetch recent games for analysis
+      async function fetchLichessRecentGames(username, max = 10) {
+        try {
+          const response = await fetch(`https://lichess.org/api/games/user/${username}?max=${max}&pgnInJson=false&tags=false&clocks=false&evals=false&opening=true`);
+          if (!response.ok) return null;
+          
+          const text = await response.text();
+          const games = text.trim().split('\n\n').filter(g => g.trim());
+          
+          return games.map(game => {
+            const lines = game.split('\n');
+            const result = {};
+            lines.forEach(line => {
+              if (line.startsWith('[')) {
+                const match = line.match(/\[([^\s]+)\s+"([^"]+)"\]/);
+                if (match) result[match[1]] = match[2];
+              }
+            });
+            return result;
+          });
+        } catch (error) {
+          console.error('Lichess recent games error:', error);
+          return null;
+        }
+      }
+
     async function addPlayer() {
       const name = document.getElementById('playerName').value.trim();
       const lichessUser = document.getElementById('lichessUsername').value.trim();
@@ -1178,6 +1238,34 @@
       if (weeklyGain < 0) weakAreas.push('consistency');
       if (currentRating < 1400) weakAreas.push('fundamentals');
 
+      // Fetch enhanced data for Option B
+      let gameStats = null;
+      let recentGames = null;
+      let openingStats = [];
+      
+      if (player.lichessUsername) {
+        gameStats = await fetchLichessGameStats(player.lichessUsername);
+        recentGames = await fetchLichessRecentGames(player.lichessUsername, 10);
+        
+        // Analyze openings from recent games
+        if (recentGames && recentGames.length > 0) {
+          const openingCounts = {};
+          recentGames.forEach(game => {
+            if (game.Opening) {
+              const opening = game.Opening.split(':')[0].trim();
+              openingCounts[opening] = (openingCounts[opening] || 0) + 1;
+            }
+          });
+          openingStats = Object.entries(openingCounts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 3);
+        }
+      },
+        gameStats,
+        recentGames,
+        openingStats,
+
       return {
         level,
         currentRating,
@@ -1267,6 +1355,19 @@
         goals.push(`Keep your ${analysis.daysTracking}-day tracking streak!`);
       }
 
+
+      // Add opening repertoire recommendations
+      if (analysis.openingStats && analysis.openingStats.length > 0) {
+        tasks.push({
+          id: 'opening-1',
+          title: `Study your most played opening: ${analysis.openingStats[0].name}`,
+          details: `You've played this ${analysis.openingStats[0].count} times recently`,
+          link: `https://lichess.org/analysis#explorer`,
+          priority: 'medium',
+          completed: false
+        });
+      }
+
       return { dailyTasks: tasks, weeklyGoals: goals };
     }
 
@@ -1291,6 +1392,69 @@
       
       return streak;
     }
+
+    // Achievement tracking system
+      function checkAchievements(player, analysis) {
+        const achievements = [];
+        
+        // Rating milestones
+        if (analysis.currentRating >= 1500 && analysis.currentRating < 1600) {
+          achievements.push({ id: 'milestone-1500', title: '🏆 Reached 1500 Rating!', icon: '🏆' });
+        } else if (analysis.currentRating >= 1800 && analysis.currentRating < 1900) {
+          achievements.push({ id: 'milestone-1800', title: '⭐ Reached 1800 Rating!', icon: '⭐' });
+        } else if (analysis.currentRating >= 2000) {
+          achievements.push({ id: 'milestone-2000', title: '🎖️ Reached 2000+ Rating!', icon: '🎖️' });
+        }
+        
+        // Streak achievements
+        const streak = calculateStreak(player);
+        if (streak >= 7) {
+          achievements.push({ id: 'streak-7', title: '🔥 7-Day Streak!', icon: '🔥' });
+        }
+        if (streak >= 30) {
+          achievements.push({ id: 'streak-30', title: '💎 30-Day Streak!', icon: '💎' });
+        }
+        
+        // Weekly gain achievements
+        if (analysis.weeklyGain >= 50) {
+          achievements.push({ id: 'weekly-50', title: '🚀 +50 Rating This Week!', icon: '🚀' });
+        }
+        
+        // Puzzle rating achievements
+        if (analysis.currentPuzzle >= 2000) {
+          achievements.push({ id: 'puzzle-2000', title: '🧩 Puzzle Master (2000+)', icon: '🧩' });
+        }
+        
+        return achievements;
+      }
+
+      // Save/load task completion state
+      function saveTaskCompletion(playerId, taskId) {
+        const key = `tasks_${playerId}`;
+        const tasks = JSON.parse(localStorage.getItem(key) || '{}');
+        tasks[taskId] = { completed: true, timestamp: Date.now() };
+        localStorage.setItem(key, JSON.stringify(tasks));
+      }
+
+      function loadTaskCompletion(playerId) {
+        const key = `tasks_${playerId}`;
+        return JSON.parse(localStorage.getItem(key) || '{}');
+      }
+
+      function clearOldTasks(playerId) {
+        const key = `tasks_${playerId}`;
+        const tasks = JSON.parse(localStorage.getItem(key) || '{}');
+        const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+        
+        // Remove tasks older than 1 day
+        Object.keys(tasks).forEach(taskId => {
+          if (tasks[taskId].timestamp < oneDayAgo) {
+            delete tasks[taskId];
+          }
+        });
+        
+        localStorage.setItem(key, JSON.stringify(tasks));
+      }
 
     function displayTrainingPlan(player) {
       const plan = player.trainingPlan;
@@ -1339,6 +1503,23 @@
               `).join('')}
             </ul>
           </div>
+
+      // Add Achievements Section
+      const achievements = checkAchievements(player, analysis);
+      if (achievements.length > 0) {
+        html += `
+          <div class="achievements-section" style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px;">
+            <h3 style="color: white; margin-bottom: 10px;">🏆 Achievements Unlocked!</h3>
+            <div class="achievement-list" style="display: flex; flex-wrap: wrap; gap: 10px;">
+              ${achievements.map(ach => `
+                <div class="achievement-badge" style="background: rgba(255,255,255,0.2); padding: 8px 15px; border-radius: 20px; color: white; font-size: 14px;">
+                  ${ach.icon} ${ach.title}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
         ` : ''}
 
         <div class="daily-tasks">
@@ -1380,16 +1561,28 @@
 
       document.getElementById('trainingBody').innerHTML = html;
       document.getElementById('trainingModal').classList.add('active');
+
+      // Toggle task completion
+      function toggleTaskCompletion(playerId, taskIdx) {
+        const player = players.find(p => p.id === playerId);
+        if (!player || !player.trainingPlan) return;
+        
+        const task = player.trainingPlan.dailyTasks[taskIdx];
+        task.completed = !task.completed;
+        
+        // Save completion state
+        if (task.completed) {
+          saveTaskCompletion(playerId, task.id);
+        }
+        
+        // Save players
+        localStorage.setItem('players', JSON.stringify(players));
+        
+        // Refresh display
+        displayTrainingPlan(player);
+      }
     }
 
-    function toggleTaskCompletion(playerId, taskIndex) {
-      const players = getPlayers();
-      const player = players.find(p => p.id === playerId);
-      if (!player || !player.trainingPlan) return;
-
-      player.trainingPlan.dailyTasks[taskIndex].completed = !player.trainingPlan.dailyTasks[taskIndex].completed;
-      savePlayers(players);
-      displayTrainingPlan(player);
     }
 
     function closeTrainingPlan() {
