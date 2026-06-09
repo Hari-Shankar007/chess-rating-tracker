@@ -504,6 +504,38 @@
     }
 
     displayPlayers();
+
+        // Auto-update system - checks once per day
+    function shouldAutoUpdate(player) {
+      const lastUpdate = player.history[player.history.length - 1];
+      if (!lastUpdate) return true;
+      
+      const daysSinceUpdate = (Date.now() - lastUpdate.timestamp) / (1000 * 60 * 60 * 24);
+      return daysSinceUpdate >= 1; // Update if last update was 1+ days ago
+    }
+
+    function autoUpdateRatings() {
+      const players = getPlayers();
+      if (players.length === 0) return;
+
+      let updated = false;
+      players.forEach(async (player) => {
+        if (shouldAutoUpdate(player)) {
+          await fetchPlayerRating(player.id);
+          updated = true;
+        }
+      });
+
+      if (updated) {
+        console.log('Auto-updated player ratings');
+      }
+    }
+
+    // Check for updates on page load
+    autoUpdateRatings();
+
+    // Check for updates every hour (3600000 ms)
+    setInterval(autoUpdateRatings, 3600000);
   </script>
 </body>
 </html>
