@@ -603,8 +603,7 @@
       <div class="btn-group">
         <button class="btn-primary" onclick="addPlayer()">➕ Add Student</button>
         <button class="btn-secondary" onclick="fetchAllRatings()">🔄 Update All Ratings</button>
-        <button class="500
-          " onclick="clearAllData()">🗑️ Clear All Data</button>
+                  <button class="btn-danger" onclick="clearAllData()">🗑️ Clear All Data</button>
       </div>
     </div>
     
@@ -861,7 +860,7 @@
             <div class="player-actions">
               <button class="btn-primary" onclick="event.stopPropagation(); fetchPlayerRating(${player.id})">Update</button>
                             
-                                          <button class="btn-training" onclick="event.stopPropagation(); showTrainingPlan(${player.id})">📚 Training</button> onclick="event.stopPropagation(); showReport(${player.id})">📊 Report</button>
+                                          <button class="btn-training" onclick="event.stopPropagation(); showTrainingPlan(${player.id})">📚 Training</button> <button class="btn-report" onclick="event.stopPropagation(); showReport(${player.id})">📊 Report</button>
               <button class="btn-danger" onclick="event.stopPropagation(); deletePlayer(${player.id})">Delete</button>
             </div>
           </div>
@@ -1211,6 +1210,7 @@
         recommendations: ['Build consistent practice habit', 'Focus on basic tactics', 'Play regularly to track progress']
       };
 
+        }
       const latest = history[history.length - 1];
       const currentRating = latest.lichess.rapid || latest.chesscom.rapid || 1200;
       const currentPuzzle = latest.lichess.puzzle || latest.chesscom.puzzle || 1200;
@@ -1261,10 +1261,7 @@
             .sort((a, b) => b.count - a.count)
             .slice(0, 3);
         }
-      },
-        gameStats,
-        recentGames,
-        openingStats,
+      }
 
       return {
         level,
@@ -1274,7 +1271,8 @@
         puzzleChange,
         weeklyGain,
         weakAreas,
-        daysTracking: Math.round((Date.now() - firstSnapshot.timestamp) / (1000 * 60 * 60 * 24))
+        daysTracking: Math.round((Date.now() - firstSnapshot.timestamp) / (1000 * 60 * 60 * 24)),
+              openingStats,
       };
     }
 
@@ -1503,23 +1501,6 @@
               `).join('')}
             </ul>
           </div>
-
-      // Add Achievements Section
-      const achievements = checkAchievements(player, analysis);
-      if (achievements.length > 0) {
-        html += `
-          <div class="achievements-section" style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px;">
-            <h3 style="color: white; margin-bottom: 10px;">🏆 Achievements Unlocked!</h3>
-            <div class="achievement-list" style="display: flex; flex-wrap: wrap; gap: 10px;">
-              ${achievements.map(ach => `
-                <div class="achievement-badge" style="background: rgba(255,255,255,0.2); padding: 8px 15px; border-radius: 20px; color: white; font-size: 14px;">
-                  ${ach.icon} ${ach.title}
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      }
         ` : ''}
 
         <div class="daily-tasks">
@@ -1563,8 +1544,10 @@
       document.getElementById('trainingModal').classList.add('active');
 
       // Toggle task completion
+      }
       function toggleTaskCompletion(playerId, taskIdx) {
-        const player = players.find(p => p.id === playerId);
+                const players = getPlayers();
+                        const player = players.find(p => p.id === playerId);
         if (!player || !player.trainingPlan) return;
         
         const task = player.trainingPlan.dailyTasks[taskIdx];
@@ -1576,14 +1559,12 @@
         }
         
         // Save players
-        localStorage.setItem('players', JSON.stringify(players));
+                savePlayers(players);
         
         // Refresh display
         displayTrainingPlan(player);
       }
-    }
 
-    }
 
     function closeTrainingPlan() {
       document.getElementById('trainingModal').classList.remove('active');
