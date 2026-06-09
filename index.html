@@ -1139,12 +1139,17 @@
     async function analyzePlayerPerformance(player) {
       const history = player.history;
       if (history.length < 2) {
-        return {
-          level: 'beginner',
-          weakAreas: ['general-improvement'],
-          recommendations: ['Build consistent practice habit']
-        };
-      }
+        // Not enough data for detailed analysis - provide beginner guidance
+      const latest = history[history.length - 1];
+      return {
+        level: 'beginner',
+        currentRating: latest.lichess?.rapid || latest.chesscom?.rapid || 1200,
+        ratingChange: 0,
+        daysTracking: history.length,
+        weeklyGain: 0,
+        weakAreas: ['general-improvement'],
+        recommendations: ['Build consistent practice habit', 'Focus on basic tactics', 'Play regularly to track progress']
+      };
 
       const latest = history[history.length - 1];
       const currentRating = latest.lichess.rapid || latest.chesscom.rapid || 1200;
