@@ -179,6 +179,191 @@
         flex-direction: column;
       }
     }
+        /* Report Modal Styles */
+    .report-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      z-index: 1000;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    .report-modal.active {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .report-content {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 900px;
+      width: 100%;
+      margin: 20px;
+      position: relative;
+    }
+    .report-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      font-size: 30px;
+      cursor: pointer;
+      color: #666;
+      background: none;
+      border: none;
+      padding: 0;
+      width: 40px;
+      height: 40px;
+    }
+    .report-close:hover {
+      color: #dc3545;
+    }
+    .report-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .report-header h2 {
+      color: #667eea;
+      font-size: 2em;
+      margin-bottom: 10px;
+    }
+    .report-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .metric-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 25px;
+      border-radius: 15px;
+      text-align: center;
+    }
+    .metric-card h4 {
+      font-size: 14px;
+      margin-bottom: 10px;
+      opacity: 0.9;
+    }
+    .metric-card .big-number {
+      font-size: 2.5em;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    .metric-card .change {
+      font-size: 1.1em;
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.2);
+    }
+    .metric-card .change.positive {
+      background: rgba(76,175,80,0.3);
+    }
+    .metric-card .change.negative {
+      background: rgba(244,67,54,0.3);
+    }
+    .achievements {
+      margin: 30px 0;
+      padding: 25px;
+      background: #f8f9fa;
+      border-radius: 15px;
+    }
+    .achievements h3 {
+      color: #333;
+      margin-bottom: 15px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 8px 16px;
+      margin: 5px;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .badge.gold {
+      background: #ffd700;
+      color: #333;
+    }
+    .badge.silver {
+      background: #c0c0c0;
+      color: #333;
+    }
+    .badge.bronze {
+      background: #cd7f32;
+      color: white;
+    }
+    .badge.milestone {
+      background: #667eea;
+      color: white;
+    }
+    .recommendations {
+      margin: 30px 0;
+      padding: 25px;
+      background: #e7f1ff;
+      border-radius: 15px;
+      border-left: 5px solid #667eea;
+    }
+    .recommendations h3 {
+      color: #333;
+      margin-bottom: 15px;
+    }
+    .recommendations ul {
+      list-style: none;
+      padding: 0;
+    }
+    .recommendations li {
+      padding: 10px 0;
+      color: #555;
+      font-size: 1.05em;
+    }
+    .recommendations li:before {
+      content: "✓ ";
+      color: #667eea;
+      font-weight: bold;
+      margin-right: 10px;
+    }
+    .btn-report {
+      background: #667eea;
+      color: white;
+      min-width: auto;
+    }
+    .print-btn {
+      display: block;
+      width: 100%;
+      margin-top: 30px;
+      padding: 15px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .print-btn:hover {
+      background: #5568d3;
+    }
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      .report-content, .report-content * {
+        visibility: visible;
+      }
+      .report-content {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+      .report-close, .print-btn {
+        display: none;
+      }
+    }
   </style>
 </head>
 <body>
@@ -204,13 +389,22 @@
       <div class="btn-group">
         <button class="btn-primary" onclick="addPlayer()">➕ Add Student</button>
         <button class="btn-secondary" onclick="fetchAllRatings()">🔄 Update All Ratings</button>
-        <button class="btn-danger" onclick="clearAllData()">🗑️ Clear All Data</button>
+        <button class="500
+          " onclick="clearAllData()">🗑️ Clear All Data</button>
       </div>
     </div>
     
     <div class="players-list" id="playersList"></div>
     
     <div class="charts-container" id="chartsContainer"></div>
+  </div>
+
+    <!-- Report Modal -->
+  <div class="report-modal" id="reportModal">
+    <div class="report-content" id="reportContent">
+      <button class="report-close" onclick="closeReport()">&times;</button>
+      <div id="reportBody"></div>
+    </div>
   </div>
 
   <script>
@@ -384,6 +578,7 @@
             </div>
             <div class="player-actions">
               <button class="btn-primary" onclick="event.stopPropagation(); fetchPlayerRating(${player.id})">Update</button>
+                            <button class="btn-report" onclick="event.stopPropagation(); showReport(${player.id})">📊 Report</button>
               <button class="btn-danger" onclick="event.stopPropagation(); deletePlayer(${player.id})">Delete</button>
             </div>
           </div>
@@ -536,6 +731,147 @@
 
     // Check for updates every hour (3600000 ms)
     setInterval(autoUpdateRatings, 3600000);
+
+        // Report Generation Functions
+    function generatePuzzleReport(player) {
+      const history = player.history;
+      if (history.length < 2) return null;
+      
+      const puzzleRatings = history.map(h => ({
+        rating: h.lichess.puzzle || h.chesscom.puzzle,
+        date: new Date(h.timestamp),
+        platform: h.lichess.puzzle ? 'Lichess' : 'Chess.com'
+      })).filter(r => r.rating !== null);
+      
+      if (puzzleRatings.length < 2) return null;
+      
+      const current = puzzleRatings[puzzleRatings.length - 1].rating;
+      const starting = puzzleRatings[0].rating;
+      const peak = Math.max(...puzzleRatings.map(r => r.rating));
+      const totalChange = current - starting;
+      const percentChange = ((totalChange / starting) * 100).toFixed(1);
+      
+      const oneWeekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      const recentRatings = puzzleRatings.filter(r => r.date.getTime() > oneWeekAgo);
+      const weeklyChange = recentRatings.length >= 2 
+        ? recentRatings[recentRatings.length - 1].rating - recentRatings[0].rating 
+        : 0;
+      
+      const daysSinceStart = (Date.now() - puzzleRatings[0].date.getTime()) / (1000 * 60 * 60 * 24);
+      const weeks = Math.max(daysSinceStart / 7, 1);
+      const avgWeekly = Math.round(totalChange / weeks);
+      
+      let status = '📊 Steady';
+      let badge = 'silver';
+      if (avgWeekly >= 50) { status = '⭐ Excellent'; badge = 'gold'; }
+      else if (avgWeekly >= 20) { status = '✅ Good'; badge = 'silver'; }
+      else if (avgWeekly < 0) { status = '⚠️ Needs Attention'; badge = 'bronze'; }
+      
+      const achievements = [];
+      const milestones = [1500, 1800, 2000, 2200, 2500];
+      milestones.forEach(m => {
+        if (current >= m && starting < m) {
+          achievements.push(`🏆 Crossed ${m}`);
+        }
+      });
+      if (daysSinceStart >= 30) achievements.push('⭐ 30 Days Tracking');
+      if (avgWeekly > 0) achievements.push('📈 Consistent Growth');
+      
+      const recommendations = [];
+      if (avgWeekly >= 50) {
+        recommendations.push('Excellent progress! Keep solving 10-15 puzzles daily');
+        recommendations.push('Challenge yourself with higher-rated puzzles');
+      } else if (avgWeekly >= 20) {
+        recommendations.push('Good progress! Try to increase puzzle volume');
+        recommendations.push('Focus on your weak tactical themes');
+      } else if (avgWeekly > 0) {
+        recommendations.push('Solve more puzzles regularly (aim for 10+ daily)');
+        recommendations.push('Review failed puzzles to learn patterns');
+      } else {
+        recommendations.push('Time to focus on tactical training!');
+        recommendations.push('Start with easier puzzles to build confidence');
+      }
+      
+      return {
+        current, starting, peak, totalChange, percentChange,
+        weeklyChange, avgWeekly, status, badge,
+        daysActive: Math.round(daysSinceStart),
+        snapshots: puzzleRatings.length,
+        achievements, recommendations
+      };
+    }
+
+    function showReport(playerId) {
+      const players = getPlayers();
+      const player = players.find(p => p.id === playerId);
+      if (!player) return;
+      
+      const report = generatePuzzleReport(player);
+      if (!report) {
+        showStatus('Not enough data for report. Need at least 2 snapshots.', 'error');
+        return;
+      }
+      
+      const changeClass = report.totalChange >= 0 ? 'positive' : 'negative';
+      const weeklyClass = report.weeklyChange >= 0 ? 'positive' : 'negative';
+      
+      const html = `
+        <div class="report-header">
+          <h2>📊 Puzzle Rating Report</h2>
+          <h3>${player.name}</h3>
+        </div>
+        
+        <div class="report-summary">
+          <div class="metric-card">
+            <h4>Current Rating</h4>
+            <p class="big-number">${report.current}</p>
+            <span class="change ${weeklyClass}">${report.weeklyChange >= 0 ? '+' : ''}${report.weeklyChange} this week</span>
+          </div>
+          
+          <div class="metric-card">
+            <h4>Total Progress</h4>
+            <p class="big-number">${report.totalChange >= 0 ? '+' : ''}${report.totalChange}</p>
+            <span class="change">${report.percentChange}%</span>
+          </div>
+          
+          <div class="metric-card">
+            <h4>Weekly Average</h4>
+            <p class="big-number">${report.avgWeekly >= 0 ? '+' : ''}${report.avgWeekly}</p>
+            <span class="badge ${report.badge}">${report.status}</span>
+          </div>
+        </div>
+        
+        <div class="achievements">
+          <h3>🎯 Achievements</h3>
+          ${report.achievements.length > 0 
+            ? report.achievements.map(a => `<span class="badge milestone">${a}</span>`).join('')
+            : '<p>Keep training to unlock achievements!</p>'}
+        </div>
+        
+        <div class="recommendations">
+          <h3>💡 Recommendations</h3>
+          <ul>
+            ${report.recommendations.map(r => `<li>${r}</li>`).join('')}
+          </ul>
+        </div>
+        
+        <button class="print-btn" onclick="window.print()">🖨️ Print Report</button>
+      `;
+      
+      document.getElementById('reportBody').innerHTML = html;
+      document.getElementById('reportModal').classList.add('active');
+    }
+
+    function closeReport() {
+      document.getElementById('reportModal').classList.remove('active');
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('reportModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeReport();
+      }
+    });
   </script>
 </body>
 </html>
