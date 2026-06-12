@@ -221,12 +221,10 @@
   </div>
 
   <script>
-    // Supabase client - uses pre-configured environment
-    const SUPABASE_URL = window.location.origin;
-    const supabase = window.supabase.createClient(
-      SUPABASE_URL,
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
-    );
+    // Supabase client - configured for your project
+    const SUPABASE_URL = 'https://vqpycvuqzgsynxxivkhj.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxcHljdnVxemdzeW54eGl2a2hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzkxNTYsImV4cCI6MjA5Njc1NTE1Nn0.XNmHo_dX-h2XilT1mTpaZHfuasXux4OjvhLiK_lG97M';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const THEME_DISPLAY_NAMES = {
       "pin": "Pins", "fork": "Forks", "skewer": "Skewers",
