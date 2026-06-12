@@ -595,10 +595,32 @@ Deno.serve(async (req: Request) => {
 
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       }
+
+      // Delete player and all associated data
+      if (actionType === "delete_player") {
+        const { playerId: idToDelete } = body;
+
+        // Cascade delete will handle related data
+        await supabase.from("players").delete().eq("id", idToDelete);
+
+        return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+      }
     }
 
     if (req.method === "GET") {
       const playerId = url.searchParams.get("playerId");
+      const action = url.searchParams.get("action");
+
+      // Get rating history for charts
+      if (action === "history" && playerId) {
+        const { data: history } = await supabase
+          .from("rating_history")
+          .select("*")
+          .eq("player_id", playerId)
+          .order("timestamp", { ascending: true });
+
+        return new Response(JSON.stringify(history || []), { headers: corsHeaders });
+      }
 
       if (playerId) {
         // Get comprehensive player data

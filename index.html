@@ -186,12 +186,16 @@
     .metric-card .big-number { font-size: 2.5em; font-weight: bold; margin: 10px 0; }
     .metric-card .change { font-size: 1.1em; display: inline-block; padding: 5px 12px; border-radius: 20px; background: rgba(255,255,255,0.2); }
     .sync-status { background: #f0f8ff; padding: 15px; border-radius: 10px; margin: 20px 0; text-align: center; }
+    .persist-badge {
+      display: inline-block; background: #28a745; color: white; padding: 4px 8px;
+      border-radius: 4px; font-size: 0.75em; margin-left: 8px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Chess Rating Tracker</h1>
-    <p class="subtitle">AI-powered training plans based on your actual weaknesses</p>
+    <p class="subtitle">AI-powered training plans based on your actual weaknesses <span class="persist-badge">Data Saved</span></p>
 
     <div id="statusMessage"></div>
 
@@ -206,7 +210,7 @@
       </div>
       <div class="btn-group">
         <button class="btn-primary" onclick="addPlayer()">Add Student</button>
-        <button class="btn-success" onclick="fetchAllTrainingPlans()">Sync All Training Plans</button>
+        <button class="btn-success" onclick="syncAllPlayers()">Sync All Players</button>
         <button class="btn-danger" onclick="clearAllData()">Clear All Data</button>
       </div>
     </div>
@@ -224,7 +228,8 @@
   </div>
 
   <script>
-    const SUPABASE_EDGE = '/functions/v1/auto-training';
+    // API endpoint - all data persisted in Supabase
+    const API = '/functions/v1/auto-training';
 
     const THEME_DISPLAY_NAMES = {
       "pin": "Pins", "fork": "Forks", "skewer": "Skewers",
@@ -248,17 +253,8 @@
       "pawnEndgame": "https://lichess.org/practice/pawn-endgames",
     };
 
-    const LOCAL_KEY = 'chessTrackerLocal';
+    let players = [];
     let selectedPlayerId = null;
-
-    function getLocalPlayers() {
-      const data = localStorage.getItem(LOCAL_KEY);
-      return data ? JSON.parse(data) : [];
-    }
-
-    function saveLocalPlayers(players) {
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(players));
-    }
 
     function showStatus(message, type = 'info') {
       const statusEl = document.getElementById('statusMessage');
@@ -266,15 +262,24 @@
       statusEl.innerHTML = message;
     }
 
-    async function callEdgeFunction(action, method = 'GET', body = null, extraParams = '') {
-      const url = `${SUPABASE_EDGE}?action=${action}${extraParams}`;
-      const options = {
-        method,
-        headers: { 'Content-Type': 'application/json' }
-      };
-      if (body) options.body = JSON.stringify(body);
-      const response = await fetch(url, options);
+    async function apiPost(action, body) {
+      const response = await fetch(`${API}?action=${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
       return response.json();
+    }
+
+    async function loadPlayers() {
+      try {
+        const response = await fetch(API);
+        players = await response.json();
+        displayPlayers();
+      } catch (error) {
+        console.error('Error loading players:', error);
+        showStatus('Error loading players', 'error');
+      }
     }
 
     async function addPlayer() {
@@ -282,103 +287,116 @@
       const lichessUsername = document.getElementById('lichessUsername').value.trim();
 
       if (!name) { showStatus('Please enter a student name', 'error'); return; }
-      if (!lichessUsername) { showStatus('Lichess username required for AI training', 'error'); return; }
+      if (!lichessUsername) { showStatus('Lichess username required', 'error'); return; }
 
-      showStatus('<span class="loading-spinner"></span>Adding student...', 'info');
-
-      const players = getLocalPlayers();
-      const newPlayer = {
-        id: Date.now().toString(),
-        name,
-        lichessUsername,
-        history: []
-      };
-      players.push(newPlayer);
-      saveLocalPlayers(players);
-
-      await fetchPlayerRating(newPlayer.id);
-      document.getElementById('playerName').value = '';
-      document.getElementById('lichessUsername').value = '';
-      displayPlayers();
-    }
-
-    async function fetchPlayerRating(playerId) {
-      const players = getLocalPlayers();
-      const player = players.find(p => p.id === playerId);
-      if (!player) return;
-
-      showStatus(`<span class="loading-spinner"></span>Fetching ratings...`, 'info');
+      showStatus('<span class="loading-spinner"></span>Adding student and fetching initial data...', 'info');
 
       try {
-        const response = await fetch(`https://lichess.org/api/user/${player.lichessUsername}`);
-        if (!response.ok) throw new Error('User not found');
-        const data = await response.json();
+        // Fetch rating from Lichess first
+        const lichessResponse = await fetch(`https://lichess.org/api/user/${lichessUsername}`);
+        if (!lichessResponse.ok) throw new Error('Lichess user not found');
+        const userData = await lichessResponse.json();
 
-        const snapshot = {
-          timestamp: Date.now(),
-          rapid: data.perfs?.rapid?.rating || null,
-          puzzle: data.perfs?.puzzle?.rating || null
-        };
+        const rapidRating = userData.perfs?.rapid?.rating || null;
+        const puzzleRating = userData.perfs?.puzzle?.rating || null;
 
-        const playerIdx = players.findIndex(p => p.id === playerId);
-        players[playerIdx].history.push(snapshot);
-        players[playerIdx].currentRating = snapshot.rapid;
-        players[playerIdx].puzzleRating = snapshot.puzzle;
-        saveLocalPlayers(players);
+        // Add player to Supabase
+        const result = await apiPost('add_player', { name, lichessUsername });
 
-        showStatus(`Ratings updated for ${player.name}!`, 'success');
-        displayPlayers();
-        if (selectedPlayerId === playerId) displayCharts(playerId);
+        if (result.error) {
+          showStatus(result.error, 'error');
+          return;
+        }
+
+        const newPlayerId = result.id;
+
+        // Store initial rating in history
+        await apiPost('update_rating', {
+          playerId: newPlayerId,
+          lichessRapid: rapidRating,
+          lichessPuzzle: puzzleRating
+        });
+
+        document.getElementById('playerName').value = '';
+        document.getElementById('lichessUsername').value = '';
+
+        showStatus(`${name} added successfully! Rating: ${rapidRating || 'N/A'}`, 'success');
+        await loadPlayers();
+
+        // Auto-sync puzzle data
+        await syncTrainingPlan(newPlayerId, name);
       } catch (error) {
-        showStatus(`Error fetching ratings: ${error.message}`, 'error');
+        showStatus(`Error: ${error.message}`, 'error');
       }
     }
 
-    async function syncTrainingPlan(playerId) {
-      const players = getLocalPlayers();
+    async function fetchPlayerRating(playerId) {
       const player = players.find(p => p.id === playerId);
       if (!player) return;
+
+      showStatus('<span class="loading-spinner"></span>Fetching ratings...', 'info');
+
+      try {
+        const response = await fetch(`https://lichess.org/api/user/${player.lichess_username}`);
+        if (!response.ok) throw new Error('User not found');
+        const userData = await response.json();
+
+        await apiPost('update_rating', {
+          playerId,
+          lichessRapid: userData.perfs?.rapid?.rating,
+          lichessPuzzle: userData.perfs?.puzzle?.rating
+        });
+
+        showStatus(`Ratings updated for ${player.name}!`, 'success');
+        await loadPlayers();
+        if (selectedPlayerId === playerId) displayCharts(playerId);
+      } catch (error) {
+        showStatus(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function syncTrainingPlan(playerId, name) {
+      const player = players.find(p => p.id === playerId);
+      const displayName = name || player?.name || playerId;
 
       showStatus('<span class="loading-spinner"></span>Analyzing puzzles and games from Lichess...', 'info');
 
       try {
-        const result = await callEdgeFunction('sync_and_plan', 'POST', {
+        const result = await apiPost('sync_and_plan', {
           playerId,
-          lichessUsername: player.lichessUsername
+          lichessUsername: player?.lichess_username
         });
 
-        player.lastSync = new Date().toISOString();
-        player.puzzlesAnalyzed = result.puzzlesAnalyzed || 0;
-        player.themesCount = result.themesCount || 0;
-        saveLocalPlayers(players);
+        if (result.error) {
+          showStatus(result.error, 'error');
+          return;
+        }
 
-        showStatus(`Analyzed ${result.puzzlesAnalyzed} puzzles, ${result.themesCount} themes! Training plan updated.`, 'success');
-        displayPlayers();
+        showStatus(`${displayName}: Analyzed ${result.puzzlesAnalyzed} puzzles, ${result.themesCount} themes!`, 'success');
+        await loadPlayers();
       } catch (error) {
         showStatus(`Error syncing: ${error.message}`, 'error');
       }
     }
 
-    async function fetchAllTrainingPlans() {
-      const players = getLocalPlayers();
-      if (players.length === 0) { showStatus('No students added', 'error'); return; }
+    async function syncAllPlayers() {
+      if (players.length === 0) { showStatus('No students to sync', 'error'); return; }
 
       for (const player of players) {
-        await syncTrainingPlan(player.id);
+        await syncTrainingPlan(player.id, player.name);
         await new Promise(r => setTimeout(r, 1000));
       }
-      showStatus('All training plans synced!', 'success');
+      showStatus('All players synced!', 'success');
     }
 
     async function showTrainingReport(playerId) {
-      const players = getLocalPlayers();
       const player = players.find(p => p.id === playerId);
       if (!player) return;
 
       showStatus('<span class="loading-spinner"></span>Loading training data...', 'info');
 
       try {
-        const response = await fetch(`${SUPABASE_EDGE}?playerId=${playerId}`);
+        const response = await fetch(`${API}?playerId=${playerId}`);
         const data = await response.json();
 
         const html = generateReportHTML(player, data);
@@ -396,18 +414,18 @@
       const tasks = data.tasks || [];
       const goals = data.goals || [];
       const openings = data.openings || [];
-      const puzzlePerf = data.puzzlePerformance || [];
+      const rating = player.training_plan?.rating || data.player?.training_plan?.rating || 'N/A';
 
       return `
         <div class="report-header">
           <h2>AI Training Plan</h2>
           <h3>${player.name}</h3>
-          <span class="auto-badge">Based on ${data.recentAttempts?.length || 0} recent puzzle attempts</span>
+          <span class="auto-badge">Based on ${data.recentAttempts?.length || 0} recent puzzle attempts | Rating: ${rating}</span>
         </div>
 
         ${weaknesses.length > 0 ? `
           <div class="analysis-section">
-            <h3>🚨 YOUR WEAKNESSES (Areas needing improvement)</h3>
+            <h3>🚨 YOUR WEAKNESSES (Tasks below target these areas)</h3>
             <div class="weakness-grid">
               ${weaknesses.slice(0, 4).map(w => `
                 <div class="weakness-card ${w.strength}">
@@ -417,12 +435,11 @@
                 </div>
               `).join('')}
             </div>
-            <p style="color: #666; margin-top: 15px;">Tasks below are designed to fix these weaknesses.</p>
           </div>
         ` : `
           <div class="analysis-section">
             <h3>✅ No Weaknesses Found</h3>
-            <p style="color: #666;">Complete more themed puzzles on Lichess for detailed weakness analysis, or you're performing well across all areas!</p>
+            <p style="color: #666;">Sync puzzle data to analyze weaknesses, or you're performing well!</p>
           </div>
         `}
 
@@ -455,20 +472,14 @@
                 </div>
               `).join('')}
             </div>
-            <p style="color: #666; margin-top: 10px; font-size: 0.9em;">
-              ${openings.find(o => o.win_rate < 40 && o.games_played >= 3) ?
-                '⚠️ Consider studying alternatives to openings with low win rates.' :
-                '✅ Your opening repertoire is performing well!'}
-            </p>
           </div>
         ` : ''}
 
         <div class="analysis-section">
           <h3>🎯 TODAY'S TRAINING TASKS</h3>
-          <p style="color: #666; margin-bottom: 15px;">Each task targets a detected weakness.</p>
           <div class="daily-tasks">
-            ${tasks.map((task, idx) => `
-              <div class="task-item ${task.completed ? 'completed' : ''}" id="task-${idx}">
+            ${tasks.length > 0 ? tasks.map(task => `
+              <div class="task-item ${task.completed ? 'completed' : ''}">
                 <div class="task-header">
                   <input type="checkbox" class="task-checkbox"
                          ${task.completed ? 'checked' : ''}
@@ -476,8 +487,8 @@
                   <div class="task-title">${task.task_title}</div>
                   <span class="task-priority ${task.priority}">${task.priority.toUpperCase()}</span>
                 </div>
-                <div class="task-details">${task.task_details}</div>
-                <div class="task-reason">${task.weakness_reason}</div>
+                <div class="task-details">${task.task_details || ''}</div>
+                ${task.weakness_reason ? `<div class="task-reason">${task.weakness_reason}</div>` : ''}
                 ${task.target_count > 0 ? `
                   <div class="task-progress">
                     <small>Progress: ${task.current_count || 0}/${task.target_count}</small>
@@ -488,57 +499,77 @@
                 ` : ''}
                 ${task.link ? `<a href="${task.link}" target="_blank" class="task-link">Start Training →</a>` : ''}
               </div>
-            `).join('')}
+            `).join('') : '<p style="color: #666;">No tasks yet. Sync puzzle data to generate tasks.</p>'}
           </div>
         </div>
 
         <div class="analysis-section">
           <h3>📈 WEEKLY GOALS</h3>
           <div class="weekly-goals">
-            ${goals.map(goal => `
+            ${goals.length > 0 ? goals.map(goal => `
               <div class="goal-item ${goal.achieved ? 'goal-achieved' : ''}">
                 <span>${goal.goal_text} ${goal.achieved ? '✅' : ''}</span>
                 <span class="goal-progress">${goal.current_value || 0} / ${goal.target_value || '?'}</span>
               </div>
-            `).join('')}
+            `).join('') : '<p style="color: #666;">No goals set yet. Sync puzzle data.</p>'}
           </div>
         </div>
 
         <div class="sync-status">
-          <strong>Last synced:</strong> ${player.lastSync ? new Date(player.lastSync).toLocaleString() : 'Never'}
-          <br><small style="color: #666;">Click "Sync" to fetch latest puzzle data from Lichess</small>
+          <strong>Last synced:</strong> ${player.last_auto_update ? new Date(player.last_auto_update).toLocaleString() : 'Never'}
         </div>
       `;
     }
 
     async function toggleTask(playerId, taskId) {
-      await callEdgeFunction('complete_task', 'POST', { taskId });
-      // Refresh the report
+      await apiPost('complete_task', { taskId });
       showTrainingReport(playerId);
     }
 
+    async function deletePlayer(playerId) {
+      if (!confirm('Delete this student?')) return;
+
+      await apiPost('delete_player', { playerId });
+      showStatus('Student deleted', 'success');
+      await loadPlayers();
+      if (selectedPlayerId === playerId) {
+        selectedPlayerId = null;
+        document.getElementById('chartsContainer').innerHTML = '';
+      }
+    }
+
+    async function clearAllData() {
+      if (!confirm('Delete ALL data?')) return;
+
+      for (const player of players) {
+        await apiPost('delete_player', { playerId: player.id });
+      }
+      showStatus('All data cleared', 'success');
+      await loadPlayers();
+    }
+
     function displayPlayers() {
-      const players = getLocalPlayers();
       const container = document.getElementById('playersList');
 
       if (players.length === 0) {
-        container.innerHTML = '<p style="text-align:center;color:#666;">No students added yet. Add your first student above!</p>';
+        container.innerHTML = '<p style="text-align:center;color:#666;">No students added yet. Data is saved automatically!</p>';
         return;
       }
 
       container.innerHTML = players.map(player => {
-        const lastSnapshot = player.history[player.history.length - 1];
+        const plan = player.training_plan || {};
         return `
-          <div class="player-card ${selectedPlayerId === player.id ? 'active' : ''}" onclick="selectPlayer('${player.id}')">
+          <div class="player-card ${selectedPlayerId === player.id ? 'active' : ''}"
+               onclick="selectPlayer('${player.id}')">
             <div class="player-info">
               <h3>${player.name}</h3>
-              <p>Lichess: ${player.lichessUsername} | Rating: ${player.currentRating || 'N/A'} | ${player.history.length} snapshots</p>
-              ${player.lastSync ? `<small style="color: #888;">Last sync: ${new Date(player.lastSync).toLocaleDateString()}</small>` : ''}
+              <p>Lichess: ${player.lichess_username} | Rating: ${plan.rating || 'N/A'}</p>
+              ${player.last_auto_update ? `<small style="color: #888;">Synced: ${new Date(player.last_auto_update).toLocaleDateString()}</small>` : ''}
             </div>
             <div class="player-actions">
               <button class="btn-secondary" onclick="event.stopPropagation(); fetchPlayerRating('${player.id}')">Update Rating</button>
               <button class="btn-success" onclick="event.stopPropagation(); syncTrainingPlan('${player.id}')">Sync Puzzles</button>
-              <button class="btn-primary" onclick="event.stopPropagation(); showTrainingReport('${player.id}')">AI Training Plan</button>
+              <button class="btn-primary" onclick="event.stopPropagation(); showTrainingReport('${player.id}')">Training Plan</button>
               <button class="btn-danger" onclick="event.stopPropagation(); deletePlayer('${player.id}')">Delete</button>
             </div>
           </div>
@@ -552,34 +583,43 @@
       displayCharts(playerId);
     }
 
-    function displayCharts(playerId) {
-      const players = getLocalPlayers();
+    async function displayCharts(playerId) {
       const player = players.find(p => p.id === playerId);
-      if (!player || player.history.length === 0) {
+      if (!player) return;
+
+      // Fetch rating history
+      try {
+        const response = await fetch(`${API}?action=history&playerId=${playerId}`);
+        const history = await response.json();
+
+        if (!history || history.length === 0) {
+          document.getElementById('chartsContainer').innerHTML = '<p style="text-align:center;color:#666;">No rating history yet. Click "Update Rating" to fetch.</p>';
+          return;
+        }
+
+        const labels = history.map(h => new Date(h.timestamp).toLocaleDateString());
+        const rapidData = history.map(h => h.lichess_rapid);
+        const puzzleData = history.map(h => h.lichess_puzzle);
+
+        const container = document.getElementById('chartsContainer');
+        container.innerHTML = `
+          <div class="chart-box">
+            <h3>Rapid Rating</h3>
+            <canvas id="rapidChart"></canvas>
+          </div>
+          <div class="chart-box">
+            <h3>Puzzle Rating</h3>
+            <canvas id="puzzleChart"></canvas>
+          </div>
+        `;
+
+        setTimeout(() => {
+          createChart('rapidChart', labels, rapidData, 'Rapid', '#0f3460');
+          createChart('puzzleChart', labels, puzzleData, 'Puzzle', '#dc3545');
+        }, 100);
+      } catch (error) {
         document.getElementById('chartsContainer').innerHTML = '<p style="text-align:center;color:#666;">No rating history yet.</p>';
-        return;
       }
-
-      const labels = player.history.map(h => new Date(h.timestamp).toLocaleDateString());
-      const rapidData = player.history.map(h => h.rapid);
-      const puzzleData = player.history.map(h => h.puzzle);
-
-      const container = document.getElementById('chartsContainer');
-      container.innerHTML = `
-        <div class="chart-box">
-          <h3>Rapid Rating</h3>
-          <canvas id="rapidChart"></canvas>
-        </div>
-        <div class="chart-box">
-          <h3>Puzzle Rating</h3>
-          <canvas id="puzzleChart"></canvas>
-        </div>
-      `;
-
-      setTimeout(() => {
-        createChart('rapidChart', labels, rapidData, 'Rapid', '#0f3460');
-        createChart('puzzleChart', labels, puzzleData, 'Puzzle', '#dc3545');
-      }, 100);
     }
 
     function createChart(canvasId, labels, data, label, color) {
@@ -606,27 +646,6 @@
       });
     }
 
-    function deletePlayer(playerId) {
-      if (!confirm('Delete this student?')) return;
-      let players = getLocalPlayers().filter(p => p.id !== playerId);
-      saveLocalPlayers(players);
-      if (selectedPlayerId === playerId) {
-        selectedPlayerId = null;
-        document.getElementById('chartsContainer').innerHTML = '';
-      }
-      displayPlayers();
-      showStatus('Student deleted', 'success');
-    }
-
-    function clearAllData() {
-      if (!confirm('Delete ALL data?')) return;
-      localStorage.removeItem(LOCAL_KEY);
-      selectedPlayerId = null;
-      displayPlayers();
-      document.getElementById('chartsContainer').innerHTML = '';
-      showStatus('All data cleared', 'success');
-    }
-
     function closeReport() {
       document.getElementById('reportModal').classList.remove('active');
     }
@@ -635,8 +654,8 @@
       if (e.target === this) closeReport();
     });
 
-    // Initialize
-    displayPlayers();
+    // Initialize - load players from Supabase
+    loadPlayers();
   </script>
 </body>
 </html>
