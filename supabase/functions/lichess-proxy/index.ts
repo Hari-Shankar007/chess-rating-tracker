@@ -23,35 +23,28 @@ Deno.serve(async (req: Request) => {
 
   try {
     const lichessUrl = `https://lichess.org${path}`;
+    console.log("Fetching:", lichessUrl);
+
     const response = await fetch(lichessUrl, {
       headers: {
-        "Accept": "application/json",
+        "Accept": "application/json, text/plain",
+        "User-Agent": "ChessRatingTracker/1.0",
       },
     });
 
+    const text = await response.text();
+
     if (!response.ok) {
-      return new Response(JSON.stringify({ error: `Lichess error: ${response.status}` }), {
+      return new Response(JSON.stringify({ error: `Lichess error: ${response.status}`, details: text }), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const contentType = response.headers.get("content-type") || "";
-
-    if (contentType.includes("application/json")) {
-      const data = await response.json();
-      return new Response(JSON.stringify(data), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    } else {
-      // Handle NDJSON or text responses
-      const text = await response.text();
-      return new Response(text, {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "text/plain" },
-      });
-    }
+    return new Response(text, {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "text/plain" },
+    });
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,

@@ -232,13 +232,16 @@
     // Proxy for Lichess API (avoids CORS)
     async function fetchLichess(endpoint) {
       const proxyUrl = `${SUPABASE_URL}/functions/v1/lichess-proxy?path=${encodeURIComponent(endpoint)}`;
+      console.log('Fetching:', proxyUrl);
       const response = await fetch(proxyUrl);
-      if (!response.ok) throw new Error('Lichess API error');
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        return await response.json();
+      const text = await response.text();
+      console.log('Response:', text.substring(0, 200));
+      if (!response.ok) {
+        let errorMsg = 'Lichess API error';
+        try { const err = JSON.parse(text); errorMsg = err.error || errorMsg; } catch {}
+        throw new Error(errorMsg);
       }
-      return await response.text();
+      try { return JSON.parse(text); } catch { return text; }
     }
 
     const THEME_DISPLAY_NAMES = {
@@ -299,7 +302,16 @@
 
       try {
         // Fetch rating from Lichess via proxy
-        const userData = await fetchLichess(`/api/user/${lichessUsername}`);
+        let userData;
+        try {
+          userData = await fetchLichess(`/api/user/${lichessUsername}`);
+        } catch (e) {
+          throw new Error('Lichess user not found: ' + lichessUsername);
+        }
+
+        if (!userData || userData.error) {
+          throw new Error(userData?.error || 'Invalid Lichess user');
+        }
 
         const rapidRating = userData.perfs?.rapid?.rating || null;
         const puzzleRating = userData.perfs?.puzzle?.rating || null;
@@ -327,7 +339,7 @@
         await loadPlayers();
 
         // Auto sync puzzle data
-        await syncTrainingPlan(newPlayer.id, name, lichessUsername);
+        syncTrainingPlan(newPlayer.id, name, lichessUsername).catch(e => console.error('Sync error:', e));
       } catch (error) {
         showStatus('Error: ' + error.message, 'error');
       }
