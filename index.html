@@ -229,6 +229,18 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxcHljdnVxemdzeW54eGl2a2hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzkxNTYsImV4cCI6MjA5Njc1NTE1Nn0.XNmHo_dX-h2XilT1mTpaZHfuasXux4OjvhLiK_lG97M';
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // Proxy for Lichess API (avoids CORS)
+    async function fetchLichess(endpoint) {
+      const proxyUrl = `${SUPABASE_URL}/functions/v1/lichess-proxy?path=${encodeURIComponent(endpoint)}`;
+      const response = await fetch(proxyUrl);
+      if (!response.ok) throw new Error('Lichess API error');
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return await response.json();
+      }
+      return await response.text();
+    }
+
     const THEME_DISPLAY_NAMES = {
       "pin": "Pins", "fork": "Forks", "skewer": "Skewers",
       "discoveredAttack": "Discovered Attacks", "doubleAttack": "Double Attacks",
@@ -286,10 +298,8 @@
       showStatus('<span class="loading-spinner"></span>Adding student...', 'info');
 
       try {
-        // Fetch rating from Lichess
-        const lichessResponse = await fetch(`https://lichess.org/api/user/${lichessUsername}`);
-        if (!lichessResponse.ok) throw new Error('Lichess user not found');
-        const userData = await lichessResponse.json();
+        // Fetch rating from Lichess via proxy
+        const userData = await fetchLichess(`/api/user/${lichessUsername}`);
 
         const rapidRating = userData.perfs?.rapid?.rating || null;
         const puzzleRating = userData.perfs?.puzzle?.rating || null;
@@ -330,9 +340,7 @@
       showStatus('<span class="loading-spinner"></span>Fetching ratings...', 'info');
 
       try {
-        const response = await fetch(`https://lichess.org/api/user/${player.lichess_username}`);
-        if (!response.ok) throw new Error('User not found');
-        const userData = await response.json();
+        const userData = await fetchLichess(`/api/user/${player.lichess_username}`);
 
         await supabase.from('rating_history').insert({
           player_id: playerId,
@@ -357,23 +365,19 @@
 
       try {
         // Fetch puzzle activity
-        const puzzleResponse = await fetch(`https://lichess.org/api/puzzle/activity?max=100`);
         let puzzles = [];
-        if (puzzleResponse.ok) {
-          const text = await puzzleResponse.text();
-          puzzles = text.split('\n').filter(l => l.trim()).map(l => {
+        try {
+          const puzzleText = await fetchLichess(`/api/puzzle/activity?max=100`);
+          puzzles = puzzleText.split('\n').filter(l => l.trim()).map(l => {
             try { return JSON.parse(l); } catch { return null; }
           }).filter(p => p);
-        }
+        } catch (e) { console.log('Puzzle activity fetch failed:', e); }
 
         // Fetch games
-        const gamesResponse = await fetch(
-          `https://lichess.org/api/games/user/${lichessUser}?max=30&tags=true&opening=true`
-        );
         let games = [];
-        if (gamesResponse.ok) {
-          const text = await gamesResponse.text();
-          games = text.split('\n\n').filter(g => g.trim()).map(game => {
+        try {
+          const gamesText = await fetchLichess(`/api/games/user/${lichessUser}?max=30&tags=true&opening=true`);
+          games = gamesText.split('\n\n').filter(g => g.trim()).map(game => {
             const result = {};
             game.split('\n').forEach(line => {
               if (line.startsWith('[')) {
@@ -383,7 +387,7 @@
             });
             return result;
           }).filter(g => g.Opening);
-        }
+        } catch (e) { console.log('Games fetch failed:', e); }
 
         // Analyze puzzle themes
         const themeStats = {};
