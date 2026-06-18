@@ -227,7 +227,7 @@
     // Supabase client - configured for your project
     const SUPABASE_URL = 'https://vqpycvuqzgsynxxivkhj.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxcHljdnVxemdzeW54eGl2a2hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzkxNTYsImV4cCI6MjA5Njc1NTE1Nn0.XNmHo_dX-h2XilT1mTpaZHfuasXux4OjvhLiK_lG97M';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // Proxy for Lichess API (avoids CORS)
     async function fetchLichess(endpoint) {
@@ -277,7 +277,7 @@
 
     async function loadPlayers() {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from('players')
           .select('*')
           .order('created_at', { ascending: false });
@@ -317,7 +317,7 @@
         const puzzleRating = userData.perfs?.puzzle?.rating || null;
 
         // Insert player
-        const { data: newPlayer, error: insertError } = await supabase
+        const { data: newPlayer, error: insertError } = await db
           .from('players')
           .insert({ name, lichess_username: lichessUsername })
           .select()
@@ -326,7 +326,7 @@
         if (insertError) throw insertError;
 
         // Store initial rating
-        await supabase.from('rating_history').insert({
+        await db.from('rating_history').insert({
           player_id: newPlayer.id,
           lichess_rapid: rapidRating,
           lichess_puzzle: puzzleRating
@@ -354,7 +354,7 @@
       try {
         const userData = await fetchLichess(`/api/user/${player.lichess_username}`);
 
-        await supabase.from('rating_history').insert({
+        await db.from('rating_history').insert({
           player_id: playerId,
           lichess_rapid: userData.perfs?.rapid?.rating,
           lichess_puzzle: userData.perfs?.puzzle?.rating
@@ -416,7 +416,7 @@
         // Store puzzle performance
         for (const [theme, stats] of Object.entries(themeStats)) {
           const accuracy = stats.total > 0 ? (stats.correct / stats.total) * 100 : 0;
-          await supabase.from('puzzle_performance').upsert({
+          await db.from('puzzle_performance').upsert({
             player_id: playerId,
             theme,
             total: stats.total,
@@ -440,7 +440,7 @@
         // Store opening stats
         for (const [name, stats] of Object.entries(openingStats)) {
           const winRate = stats.played > 0 ? ((stats.won + stats.drawn * 0.5) / stats.played) * 100 : 0;
-          await supabase.from('opening_stats').upsert({
+          await db.from('opening_stats').upsert({
             player_id: playerId,
             opening_name: name,
             games_played: stats.played,
@@ -452,7 +452,7 @@
         }
 
         // Update player sync time
-        await supabase.from('players').update({
+        await db.from('players').update({
           last_auto_update: new Date().toISOString(),
           training_plan: {
             lastGenerated: new Date().toISOString(),
@@ -484,7 +484,7 @@
         .sort((a, b) => a.accuracy - b.accuracy);
 
       // Clear old tasks
-      await supabase.from('training_tasks')
+      await db.from('training_tasks')
         .delete()
         .eq('player_id', playerId);
 
@@ -527,7 +527,7 @@
       });
 
       for (const task of tasks) {
-        await supabase.from('training_tasks').insert(task);
+        await db.from('training_tasks').insert(task);
       }
 
       // Generate weekly goals
@@ -552,7 +552,7 @@
       }
 
       for (const goal of goals) {
-        await supabase.from('weekly_goals').upsert(goal, { onConflict: 'player_id,week_start,goal_type' });
+        await db.from('weekly_goals').upsert(goal, { onConflict: 'player_id,week_start,goal_type' });
       }
     }
 
@@ -703,7 +703,7 @@
     }
 
     async function toggleTask(playerId, taskId, checked) {
-      await supabase.from('training_tasks')
+      await db.from('training_tasks')
         .update({ completed: checked, completed_at: checked ? new Date().toISOString() : null })
         .eq('id', taskId);
     }
@@ -711,7 +711,7 @@
     async function deletePlayer(playerId) {
       if (!confirm('Delete this student?')) return;
 
-      await supabase.from('players').delete().eq('id', playerId);
+      await db.from('players').delete().eq('id', playerId);
       showStatus('Deleted', 'success');
       await loadPlayers();
       if (selectedPlayerId === playerId) {
@@ -723,7 +723,7 @@
     async function clearAllData() {
       if (!confirm('Delete ALL data?')) return;
       for (const p of players) {
-        await supabase.from('players').delete().eq('id', p.id);
+        await db.from('players').delete().eq('id', p.id);
       }
       showStatus('Cleared', 'success');
       await loadPlayers();
@@ -762,7 +762,7 @@
     }
 
     async function displayCharts(playerId) {
-      const { data: history } = await supabase
+      const { data: history } = await db
         .from('rating_history')
         .select('*')
         .eq('player_id', playerId)
